@@ -82,7 +82,7 @@ router.post('/image', auth, imageUpload.single('image'), async (req: AuthRequest
   if (!req.file) {
     return res.status(400).json({ message: 'No file uploaded' });
   }
-  const fileUrl = `${process.env.API_URL || 'http://192.168.145.108:4000'}/uploads/${req.file.filename}`;
+  const fileUrl = `${process.env.API_URL || 'http://e-commerce-social-app.onrender.com'}/uploads/${req.file.filename}`;
   res.json({ url: fileUrl, filename: req.file.filename, size: req.file.size });
 });
 
@@ -92,7 +92,7 @@ router.post('/images', auth, imageUpload.array('images', 10), async (req: AuthRe
     return res.status(400).json({ message: 'No files uploaded' });
   }
   const files = req.files as Express.Multer.File[];
-  const baseUrl = process.env.API_URL || 'http://192.168.145.108:4000';
+  const baseUrl = process.env.API_URL || 'http://e-commerce-social-app.onrender.com';
   const urls = files.map((file) => `${baseUrl}/uploads/${file.filename}`);
   res.json({ urls, filenames: files.map((f) => f.filename) });
 });
@@ -102,7 +102,7 @@ router.post('/video', auth, videoUpload.single('video'), async (req: AuthRequest
   if (!req.file) {
     return res.status(400).json({ message: 'No file uploaded' });
   }
-  const fileUrl = `${process.env.API_URL || 'http://192.168.145.108:4000'}/uploads/${req.file.filename}`;
+  const fileUrl = `${process.env.API_URL || 'http://e-commerce-social-app.onrender.com'}/uploads/${req.file.filename}`;
   res.json({ url: fileUrl, filename: req.file.filename, size: req.file.size });
 });
 
@@ -111,7 +111,7 @@ router.post('/audio', auth, audioUpload.single('audio'), async (req: AuthRequest
   if (!req.file) {
     return res.status(400).json({ message: 'No file uploaded' });
   }
-  const fileUrl = `${process.env.API_URL || 'http://192.168.145.108:4000'}/uploads/${req.file.filename}`;
+  const fileUrl = `${process.env.API_URL || 'http://e-commerce-social-app.onrender.com'}/uploads/${req.file.filename}`;
   res.json({ url: fileUrl, filename: req.file.filename, size: req.file.size });
 });
 
@@ -120,7 +120,7 @@ router.post('/file', auth, fileUpload.single('file'), async (req: AuthRequest, r
   if (!req.file) {
     return res.status(400).json({ message: 'No file uploaded' });
   }
-  const fileUrl = `${process.env.API_URL || 'http://192.168.145.108:4000'}/uploads/${req.file.filename}`;
+  const fileUrl = `${process.env.API_URL || 'http://e-commerce-social-app.onrender.com'}/uploads/${req.file.filename}`;
   res.json({ url: fileUrl, filename: req.file.originalname, size: req.file.size });
 });
 

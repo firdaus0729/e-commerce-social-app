@@ -20,7 +20,7 @@ import { errorHandler } from './middleware/error';
 export const createApp = () => {
   const app = express();
   // Allow dev origins; tighten in production
-  app.use(cors({ origin: true, credentials: true }));
+  app.use(cors()); // permissive for testing; restrict in production
 
   app.use(express.json({ limit: '1mb' }));
   app.use(morgan('dev'));
