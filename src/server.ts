@@ -15,7 +15,8 @@ const start = async () => {
   setupWebSocket(httpServer);
   
   httpServer.listen(env.port, () => {
-    console.log(`API listening on http://localhost:${env.port}`);
+    console.log(`API listening on port ${env.port}`);
+    console.log(`Client URL(s): ${env.clientUrl}`);
     console.log(`WebSocket server ready for WebRTC signaling`);
   });
 

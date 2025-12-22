@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { env } from './config/env';
 import authRoutes from './routes/auth';
 import storeRoutes from './routes/stores';
@@ -19,11 +21,34 @@ import { errorHandler } from './middleware/error';
 
 export const createApp = () => {
   const app = express();
-  // Allow dev origins; tighten in production
-  app.use(cors()); // permissive for testing; restrict in production
+  // Security middleware
+  app.use(helmet());
 
-  app.use(express.json({ limit: '1mb' }));
-  app.use(morgan('dev'));
+  // Respect proxy headers (for correct secure cookies and IPs) when deployed behind a proxy
+  if (env.nodeEnv === 'production') {
+    app.set('trust proxy', 1);
+  }
+
+  // Configure CORS to allow only known origins and support credentials
+  const defaultLocalOrigins = ['http://localhost:19006', 'http://localhost:8081'];
+  const allowedOrigins = Array.from(new Set([...(env.allowedOrigins || []), ...defaultLocalOrigins]));
+  const corsOptions = {
+    origin: (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => {
+      if (!origin) return cb(null, true); // allow non-browser requests like mobile or server-to-server
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(new Error('Not allowed by CORS'));
+    },
+    credentials: true,
+  };
+
+  app.use(cors(corsOptions));
+
+  app.use(express.json({ limit: '2mb' }));
+  app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));
+
+  // Basic rate limiting
+  const limiter = rateLimit({ windowMs: env.rateLimitWindowMs, max: env.rateLimitMax });
+  app.use(limiter);
 
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
   app.use('/auth', authRoutes);
