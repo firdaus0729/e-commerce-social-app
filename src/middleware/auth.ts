@@ -8,12 +8,31 @@ export interface AuthRequest extends Request {
 }
 
 export const auth = async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const header = req.headers.authorization;
-  if (!header?.startsWith('Bearer ')) {
+  const authHeader = req.headers.authorization;
+  let token: string | undefined;
+
+  // 1) Primary: Bearer token from Authorization header
+  if (authHeader?.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  }
+
+  // 2) Fallback: custom x-access-token header
+  if (!token) {
+    const altHeader = req.headers['x-access-token'];
+    if (typeof altHeader === 'string' && altHeader) {
+      token = altHeader;
+    }
+  }
+
+  // 3) Fallback: token query parameter (?token=...)
+  if (!token && typeof req.query.token === 'string' && req.query.token) {
+    token = req.query.token;
+  }
+
+  if (!token) {
     return res.status(401).json({ message: 'Missing authorization header' });
   }
 
-  const token = header.split(' ')[1];
   try {
     const decoded = jwt.verify(token, env.jwtSecret) as { sub: string };
     const user = await User.findById(decoded.sub);
