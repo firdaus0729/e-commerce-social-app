@@ -32,16 +32,29 @@ export const createApp = () => {
   // Configure CORS to allow only known origins and support credentials
   const defaultLocalOrigins = ['http://localhost:19006', 'http://localhost:8081'];
   const allowedOrigins = Array.from(new Set([...(env.allowedOrigins || []), ...defaultLocalOrigins]));
+
+  // Allow all origins when explicitly requested via env var (useful for quick deploys)
+  const allowAll = (process.env.ALLOW_ALL_ORIGINS || '').toLowerCase() === 'true';
+
   const corsOptions = {
     origin: (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => {
-      if (!origin) return cb(null, true); // allow non-browser requests like mobile or server-to-server
+      // allow server-side or non-browser requests
+      if (!origin) return cb(null, true);
+      if (allowAll) return cb(null, true);
       if (allowedOrigins.includes(origin)) return cb(null, true);
+      console.warn('[cors] Rejected origin:', origin, 'allowedOrigins=', allowedOrigins);
       return cb(new Error('Not allowed by CORS'));
     },
     credentials: true,
-  };
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-access-token', 'Accept'],
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
+  } as any;
 
   app.use(cors(corsOptions));
+  // Ensure preflight requests are handled
+  app.options('*', cors(corsOptions));
 
   app.use(express.json({ limit: '2mb' }));
   app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));
