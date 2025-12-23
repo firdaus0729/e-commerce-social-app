@@ -13,10 +13,13 @@ interface SocketUser {
 const connectedUsers = new Map<string, SocketUser>();
 
 export function setupWebSocket(httpServer: HTTPServer) {
+  const socketOrigins = (env.allowedOrigins && env.allowedOrigins.length) ? env.allowedOrigins : ['*'];
+
   const io = new SocketIOServer(httpServer, {
     cors: {
-      origin: '*',
+      origin: socketOrigins,
       methods: ['GET', 'POST'],
+      credentials: true,
     },
   });
 

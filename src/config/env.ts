@@ -14,7 +14,8 @@ export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: Number(process.env.PORT ?? 4000),
   // Prefer explicit env var for production; fall back to local Mongo for development
-  mongoUri: process.env.MONGO_URI ?? 'mongodb+srv://firdausjulkifli0729_db_user:BCT0fbq0p5SGfCtb@live-shop.3l2ytrw.mongodb.net/live-shop',
+  // NOTE: in production `MONGO_URI` is required (see check above). Do NOT commit production credentials.
+  mongoUri: process.env.MONGO_URI ?? 'mongodb://127.0.0.1:27017/live-shop',
   jwtSecret: process.env.JWT_SECRET ?? 'devsecret',
   // Allow comma-separated client URLs in CLIENT_URL (e.g. https://app.example.com,https://admin.example.com)
   clientUrl: clientUrlRaw,
