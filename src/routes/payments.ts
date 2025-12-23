@@ -20,7 +20,7 @@ const router = Router();
 // Create payment intent for checkout
 router.post('/checkout/create-intent', auth, async (req: AuthRequest, res) => {
   try {
-    const provider = 'paypal';
+    const provider = req.body.provider || 'paypal';
     const cart = await Cart.findOne({ user: req.user!._id }).populate('items.product');
     
     if (!cart || cart.items.length === 0) {
@@ -56,62 +56,94 @@ router.post('/checkout/create-intent', auth, async (req: AuthRequest, res) => {
       status: 'pending',
       paymentProvider: provider,
     });
-
-    // Check seller has PayPal email configured
-    const storeDoc = await Store.findById(store);
-    if (!storeDoc?.paypalEmail) {
-      return res.status(400).json({ 
-        message: 'Seller has not configured PayPal payment. Please contact the seller.',
-        code: 'SELLER_PAYPAL_NOT_CONFIGURED'
-      });
-    }
-
-    // Check buyer has PayPal email linked (recommended but not strictly required)
-    const buyer = await User.findById(req.user!._id);
-    if (!buyer?.paypalEmail) {
-      return res.status(400).json({ 
-        message: 'Please link your PayPal account in profile settings to checkout.',
-        code: 'BUYER_PAYPAL_NOT_LINKED',
-        action: 'LINK_PAYPAL'
-      });
-    }
-
     const { platformFee, sellerAmount } = calculatePlatformFee(total);
+    const storeDoc = await Store.findById(store);
 
-    // Create PayPal order with split payment (direct to seller)
-    const paypalOrder = await createPayPalOrder(
-      total, 
-      order.currency, 
-      storeDoc.paypalEmail, // Seller's PayPal email - receives payment directly
-      {
-        orderId: order._id.toString(),
-        userId: req.user!._id.toString(),
-        storeId: store.toString(),
+    // Handle PayPal provider
+    if (provider === 'paypal') {
+      // Check seller has PayPal email configured
+      const storeDoc = await Store.findById(store);
+      if (!storeDoc?.paypalEmail) {
+        return res.status(400).json({ 
+          message: 'Seller has not configured PayPal payment. Please contact the seller.',
+          code: 'SELLER_PAYPAL_NOT_CONFIGURED'
+        });
       }
-    );
 
-    await Payment.create({
-      order: order._id,
-      user: req.user!._id,
-      store,
-      amount: total,
-      currency: order.currency,
-      platformFee,
-      sellerAmount,
-      provider: 'paypal',
-      providerPaymentId: paypalOrder.id,
-      status: 'pending',
-    });
+      // Check buyer has PayPal email linked (recommended but not strictly required)
+      const buyer = await User.findById(req.user!._id);
+      if (!buyer?.paypalEmail) {
+        return res.status(400).json({ 
+          message: 'Please link your PayPal account in profile settings to checkout.',
+          code: 'BUYER_PAYPAL_NOT_LINKED',
+          action: 'LINK_PAYPAL'
+        });
+      }
 
-    await Order.findByIdAndUpdate(order._id, { paymentIntentId: paypalOrder.id });
+      // Create PayPal order with split payment (direct to seller)
+      const paypalOrder = await createPayPalOrder(
+        total, 
+        order.currency, 
+        storeDoc.paypalEmail, // Seller's PayPal email - receives payment directly
+        {
+          orderId: order._id.toString(),
+          userId: req.user!._id.toString(),
+          storeId: store.toString(),
+        }
+      );
 
-    res.json({
-      orderId: order._id,
-      paypalOrderId: paypalOrder.id,
-      approvalUrl: paypalOrder.approvalUrl,
-      amount: total,
-      currency: order.currency,
-    });
+      await Payment.create({
+        order: order._id,
+        user: req.user!._id,
+        store,
+        amount: total,
+        currency: order.currency,
+        platformFee,
+        sellerAmount,
+        provider: 'paypal',
+        providerPaymentId: paypalOrder.id,
+        status: 'pending',
+      });
+
+      await Order.findByIdAndUpdate(order._id, { paymentIntentId: paypalOrder.id });
+
+      res.json({
+        orderId: order._id,
+        paypalOrderId: paypalOrder.id,
+        approvalUrl: paypalOrder.approvalUrl,
+        amount: total,
+        currency: order.currency,
+      });
+      return;
+    }
+
+    // Handle bank transfers (offsite/manual) - create payment record and return instructions
+    if (provider === 'bank') {
+      if (!storeDoc?.bankDetails || !storeDoc.bankDetails.accountNumber) {
+        return res.status(400).json({ message: 'Seller has not configured bank payout. Please contact the seller.', code: 'SELLER_BANK_NOT_CONFIGURED' });
+      }
+
+      await Payment.create({
+        order: order._id,
+        user: req.user!._id,
+        store,
+        amount: total,
+        currency: order.currency,
+        platformFee,
+        sellerAmount,
+        provider: 'bank',
+        providerPaymentId: null,
+        status: 'pending',
+      });
+
+      res.json({
+        orderId: order._id,
+        amount: total,
+        currency: order.currency,
+        instructions: `Please transfer ${order.currency} ${total.toFixed(2)} to the seller bank account: ${storeDoc.bankDetails.accountName} - ${storeDoc.bankDetails.accountNumber} (${storeDoc.bankDetails.bankName}). After transfer, confirm payment in the app.`
+      });
+      return;
+    }
   } catch (err: any) {
     res.status(500).json({ message: err.message || 'Failed to create payment intent' });
   }
@@ -134,6 +166,33 @@ router.post('/checkout/confirm', auth, async (req: AuthRequest, res) => {
     const payment = await Payment.findOne({ order: orderId, providerPaymentId: paymentIntentId });
     if (!payment) {
       return res.status(404).json({ message: 'Payment not found' });
+    }
+
+    // If this payment was created for a bank transfer, confirm without calling PayPal
+    if (payment.provider === 'bank') {
+      payment.status = 'succeeded';
+      if (!payment.metadata) payment.metadata = {};
+      payment.metadata.confirmedBy = req.user!._id.toString();
+      await payment.save();
+
+      order.status = 'paid';
+      await order.save();
+
+      const stats = await StoreStats.findOne({ store: order.store });
+      if (stats) {
+        stats.productsSold += order.items.reduce((sum, i) => sum + i.quantity, 0);
+        stats.totalRevenue += payment.amount;
+        stats.walletBalance += payment.sellerAmount;
+        await stats.save();
+      }
+
+      const cart = await Cart.findOne({ user: req.user!._id });
+      if (cart) {
+        cart.items = [];
+        await cart.save();
+      }
+
+      return res.json({ success: true, order, payment });
     }
 
     const capture = await capturePayPalOrder(paymentIntentId);

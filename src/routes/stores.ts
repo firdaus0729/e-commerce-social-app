@@ -141,6 +141,24 @@ router.patch('/:id/paypal-email', auth, async (req: AuthRequest, res) => {
   });
 });
 
+// Update bank details for store (owner only)
+router.patch('/:id/bank-details', auth, async (req: AuthRequest, res) => {
+  const { accountName, accountNumber, bankName, iban } = req.body;
+
+  if (!accountName || !accountNumber || !bankName) {
+    return res.status(400).json({ message: 'accountName, accountNumber and bankName are required' });
+  }
+
+  const store = await Store.findOne({ _id: req.params.id, owner: req.user!._id });
+  if (!store) return res.status(404).json({ message: 'Store not found' });
+
+  store.bankDetails = { accountName, accountNumber, bankName, iban };
+  store.payoutProvider = 'bank';
+  await store.save();
+
+  res.json({ message: 'Bank details updated', bankDetails: store.bankDetails });
+});
+
 // Delete store and cascade delete products (owner only)
 router.delete('/:id', auth, async (req: AuthRequest, res) => {
   const store = await Store.findOneAndDelete({ _id: req.params.id, owner: req.user!._id });

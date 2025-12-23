@@ -7,9 +7,15 @@ export interface IStore extends Document {
   description?: string;
   logo?: string;
   banner?: string;
-  payoutProvider?: 'stripe' | 'paypal';
+  payoutProvider?: 'stripe' | 'paypal' | 'bank';
   payoutAccountId?: string;
   paypalEmail?: string; // Seller's PayPal email for receiving payouts
+  bankDetails?: {
+    accountName?: string;
+    accountNumber?: string;
+    bankName?: string;
+    iban?: string;
+  };
   isActive: boolean;
 }
 
@@ -21,9 +27,15 @@ const storeSchema = new Schema<IStore>(
     description: String,
     logo: String,
     banner: String,
-    payoutProvider: { type: String, enum: ['stripe', 'paypal'] },
+    payoutProvider: { type: String, enum: ['stripe', 'paypal', 'bank'] },
     payoutAccountId: String,
     paypalEmail: { type: String }, // Seller's PayPal email for receiving payouts
+    bankDetails: {
+      accountName: String,
+      accountNumber: String,
+      bankName: String,
+      iban: String,
+    },
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true }
