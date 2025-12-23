@@ -16,7 +16,7 @@ export interface IOrder extends Document {
   subtotal: number;
   total: number;
   currency: string;
-  paymentProvider?: 'stripe' | 'paypal';
+  paymentProvider?: 'stripe' | 'paypal' | 'bank';
   paymentIntentId?: string;
   status: OrderStatus;
 }
@@ -39,7 +39,7 @@ const orderSchema = new Schema<IOrder>(
     subtotal: { type: Number, required: true },
     total: { type: Number, required: true },
     currency: { type: String, default: 'USD' },
-    paymentProvider: { type: String, enum: ['stripe', 'paypal'] },
+    paymentProvider: { type: String, enum: ['stripe', 'paypal', 'bank'] },
     paymentIntentId: String,
     status: {
       type: String,
