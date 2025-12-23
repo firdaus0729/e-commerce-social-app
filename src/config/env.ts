@@ -27,5 +27,12 @@ export const env = {
   // Basic rate limit defaults
   rateLimitWindowMs: Number(process.env.RATE_LIMIT_WINDOW_MS ?? 1000 * 60 * 1),
   rateLimitMax: Number(process.env.RATE_LIMIT_MAX ?? 100),
+  // Optional Cloudinary configuration - set these in your deploy environment to enable
+  cloudinary: {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME ?? process.env.CLOUDINARY_CLOUDNAME ?? undefined,
+    apiKey: process.env.CLOUDINARY_API_KEY ?? undefined,
+    apiSecret: process.env.CLOUDINARY_API_SECRET ?? undefined,
+    url: process.env.CLOUDINARY_URL ?? undefined,
+  },
 };
 
