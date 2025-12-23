@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import streamifier from 'streamifier';
 import { auth, AuthRequest } from '../middleware/auth';
 import { env } from '../config/env';
 import { Upload } from '../models/Upload';
@@ -15,16 +16,21 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Configure multer for file storage
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadsDir);
-  },
+// Use memory storage when Cloudinary is configured (avoid writing to disk on ephemeral hosts)
+const cloudConfigured = Boolean(
+  env.cloudinary && (env.cloudinary.url || (env.cloudinary.cloudName && env.cloudinary.apiKey && env.cloudinary.apiSecret))
+);
+
+const memoryStorage = multer.memoryStorage();
+const diskStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadsDir),
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
     cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
   },
 });
+
+const storage = cloudConfigured ? memoryStorage : diskStorage;
 
 // Configure cloudinary if available
 if (env.cloudinary && (env.cloudinary.url || (env.cloudinary.cloudName && env.cloudinary.apiKey && env.cloudinary.apiSecret))) {
@@ -83,16 +89,30 @@ const audioUpload = multer({
 const fileUpload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 
 router.post('/image', auth, imageUpload.single('image'), async (req: AuthRequest, res) => {
+  console.log('[upload] /image request', { ip: req.ip, headers: req.headers && { origin: req.headers.origin, 'content-length': req.headers['content-length'] } });
   if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
   try {
-    if (cloudinary.config().cloud_name) {
-      const uploaded = await cloudinary.uploader.upload(req.file.path, { resource_type: 'image' });
-      try { fs.unlinkSync(req.file.path); } catch {}
-      const saved = await Upload.create({ url: uploaded.secure_url, filename: req.file.filename, size: req.file.size, mimeType: req.file.mimetype, publicId: uploaded.public_id, uploader: req.user?._id });
+    if (cloudConfigured && (req.file as any).buffer) {
+      // Upload buffer to Cloudinary via stream
+      const buffer = (req.file as any).buffer as Buffer;
+      const streamUpload = (resourceType: 'raw' | 'auto' | 'image' | 'video' = 'image') => new Promise<any>((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream({ resource_type: resourceType as any }, (error, result) => {
+          if (error) return reject(error);
+          resolve(result);
+        });
+        streamifier.createReadStream(buffer).pipe(uploadStream);
+      });
+
+      const uploaded = await streamUpload('image');
+      const saved = await Upload.create({ url: uploaded.secure_url, filename: req.file.originalname || req.file.fieldname, size: req.file.size, mimeType: req.file.mimetype, publicId: uploaded.public_id, uploader: req.user?._id });
       return res.json({ url: saved.url, filename: saved.filename, size: saved.size, id: saved._id });
     }
-    const fileUrl = `${process.env.API_URL || 'http://e-commerce-social-app.onrender.com'}/uploads/${req.file.filename}`;
-    const saved = await Upload.create({ url: fileUrl, filename: req.file.filename, size: req.file.size, mimeType: req.file.mimetype, uploader: req.user?._id });
+
+    // Fallback: file on disk (either because cloud not configured or using disk storage)
+    const file = req.file as Express.Multer.File;
+    if (!file) return res.status(400).json({ message: 'No file uploaded' });
+    const fileUrl = `${process.env.API_URL || 'http://e-commerce-social-app.onrender.com'}/uploads/${file.filename}`;
+    const saved = await Upload.create({ url: fileUrl, filename: file.filename, size: file.size, mimeType: file.mimetype, uploader: req.user?._id });
     return res.json({ url: saved.url, filename: saved.filename, size: saved.size, id: saved._id });
   } catch (err: any) {
     console.error('Upload image error', err);
@@ -105,12 +125,27 @@ router.post('/images', auth, imageUpload.array('images', 10), async (req: AuthRe
   if (!files || files.length === 0) return res.status(400).json({ message: 'No files uploaded' });
   try {
     const results: any[] = [];
-    if (cloudinary.config().cloud_name) {
+    if (cloudConfigured) {
+      // If memory buffers are available, upload via stream, otherwise use file.path
       for (const file of files) {
-        const uploaded = await cloudinary.uploader.upload(file.path, { resource_type: 'image' });
-        try { fs.unlinkSync(file.path); } catch {}
-        const saved = await Upload.create({ url: uploaded.secure_url, filename: file.filename, size: file.size, mimeType: file.mimetype, publicId: uploaded.public_id, uploader: req.user?._id });
-        results.push({ url: saved.url, filename: saved.filename, size: saved.size, id: saved._id });
+        if ((file as any).buffer) {
+          const buffer = (file as any).buffer as Buffer;
+          const streamUpload = (resourceType: 'raw' | 'auto' | 'image' | 'video' = 'image') => new Promise<any>((resolve, reject) => {
+            const uploadStream = cloudinary.uploader.upload_stream({ resource_type: resourceType as any }, (error, result) => {
+              if (error) return reject(error);
+              resolve(result);
+            });
+            streamifier.createReadStream(buffer).pipe(uploadStream);
+          });
+          const uploaded = await streamUpload('image');
+          const saved = await Upload.create({ url: uploaded.secure_url, filename: file.originalname || file.fieldname || file.filename, size: file.size, mimeType: file.mimetype, publicId: uploaded.public_id, uploader: req.user?._id });
+          results.push({ url: saved.url, filename: saved.filename, size: saved.size, id: saved._id });
+        } else {
+          const uploaded = await cloudinary.uploader.upload(file.path, { resource_type: 'image' });
+          try { fs.unlinkSync(file.path); } catch {}
+          const saved = await Upload.create({ url: uploaded.secure_url, filename: file.filename, size: file.size, mimeType: file.mimetype, publicId: uploaded.public_id, uploader: req.user?._id });
+          results.push({ url: saved.url, filename: saved.filename, size: saved.size, id: saved._id });
+        }
       }
     } else {
       const baseUrl = process.env.API_URL || 'http://e-commerce-social-app.onrender.com';
@@ -130,7 +165,20 @@ router.post('/images', auth, imageUpload.array('images', 10), async (req: AuthRe
 router.post('/video', auth, videoUpload.single('video'), async (req: AuthRequest, res) => {
   if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
   try {
-    if (cloudinary.config().cloud_name) {
+    if (cloudConfigured && (req.file as any).buffer) {
+      const buffer = (req.file as any).buffer as Buffer;
+      const streamUpload = (resourceType: 'raw' | 'auto' | 'image' | 'video' = 'video') => new Promise<any>((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream({ resource_type: resourceType as any }, (error, result) => {
+          if (error) return reject(error);
+          resolve(result);
+        });
+        streamifier.createReadStream(buffer).pipe(uploadStream);
+      });
+      const uploaded = await streamUpload('video');
+      const saved = await Upload.create({ url: uploaded.secure_url, filename: req.file.originalname || req.file.filename, size: req.file.size, mimeType: req.file.mimetype, publicId: uploaded.public_id, uploader: req.user?._id });
+      return res.json({ url: saved.url, filename: saved.filename, size: saved.size, id: saved._id });
+    }
+    if (cloudConfigured) {
       const uploaded = await cloudinary.uploader.upload(req.file.path, { resource_type: 'video' });
       try { fs.unlinkSync(req.file.path); } catch {}
       const saved = await Upload.create({ url: uploaded.secure_url, filename: req.file.filename, size: req.file.size, mimeType: req.file.mimetype, publicId: uploaded.public_id, uploader: req.user?._id });
@@ -148,7 +196,20 @@ router.post('/video', auth, videoUpload.single('video'), async (req: AuthRequest
 router.post('/audio', auth, audioUpload.single('audio'), async (req: AuthRequest, res) => {
   if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
   try {
-    if (cloudinary.config().cloud_name) {
+    if (cloudConfigured && (req.file as any).buffer) {
+      const buffer = (req.file as any).buffer as Buffer;
+      const streamUpload = (resourceType: 'raw' | 'auto' | 'image' | 'video' = 'video') => new Promise<any>((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream({ resource_type: resourceType as any }, (error, result) => {
+          if (error) return reject(error);
+          resolve(result);
+        });
+        streamifier.createReadStream(buffer).pipe(uploadStream);
+      });
+      const uploaded = await streamUpload('video');
+      const saved = await Upload.create({ url: uploaded.secure_url, filename: req.file.originalname || req.file.filename, size: req.file.size, mimeType: req.file.mimetype, publicId: uploaded.public_id, uploader: req.user?._id });
+      return res.json({ url: saved.url, filename: saved.filename, size: saved.size, id: saved._id });
+    }
+    if (cloudConfigured) {
       const uploaded = await cloudinary.uploader.upload(req.file.path, { resource_type: 'video' });
       try { fs.unlinkSync(req.file.path); } catch {}
       const saved = await Upload.create({ url: uploaded.secure_url, filename: req.file.filename, size: req.file.size, mimeType: req.file.mimetype, publicId: uploaded.public_id, uploader: req.user?._id });
@@ -166,7 +227,20 @@ router.post('/audio', auth, audioUpload.single('audio'), async (req: AuthRequest
 router.post('/file', auth, fileUpload.single('file'), async (req: AuthRequest, res) => {
   if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
   try {
-    if (cloudinary.config().cloud_name) {
+    if (cloudConfigured && (req.file as any).buffer) {
+      const buffer = (req.file as any).buffer as Buffer;
+      const streamUpload = (resourceType: 'raw' | 'auto' | 'image' | 'video' = 'auto') => new Promise<any>((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream({ resource_type: resourceType as any }, (error, result) => {
+          if (error) return reject(error);
+          resolve(result);
+        });
+        streamifier.createReadStream(buffer).pipe(uploadStream);
+      });
+      const uploaded = await streamUpload('auto');
+      const saved = await Upload.create({ url: uploaded.secure_url, filename: req.file.originalname || req.file.filename, size: req.file.size, mimeType: req.file.mimetype, publicId: uploaded.public_id, uploader: req.user?._id });
+      return res.json({ url: saved.url, filename: saved.filename, size: saved.size, id: saved._id });
+    }
+    if (cloudConfigured) {
       const uploaded = await cloudinary.uploader.upload(req.file.path, { resource_type: 'auto' });
       try { fs.unlinkSync(req.file.path); } catch {}
       const saved = await Upload.create({ url: uploaded.secure_url, filename: req.file.originalname, size: req.file.size, mimeType: req.file.mimetype, publicId: uploaded.public_id, uploader: req.user?._id });
