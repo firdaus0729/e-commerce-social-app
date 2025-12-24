@@ -30,8 +30,10 @@ export const createApp = () => {
   }
 
   // Configure CORS to allow only known origins and support credentials
+  // Keep a small dev whitelist for local web testing. Native clients (APK/.ipa) typically
+  // do not send an Origin header, and those requests are allowed below.
   const defaultLocalOrigins = ['http://localhost:19006', 'http://localhost:8081'];
-  const allowedOrigins = Array.from(new Set([...(env.allowedOrigins || []), ...defaultLocalOrigins]));
+  const allowedOrigins = Array.from(new Set([...defaultLocalOrigins]));
 
   // Allow all origins when explicitly requested via env var (useful for quick deploys)
   const allowAll = (process.env.ALLOW_ALL_ORIGINS || '').toLowerCase() === 'true';

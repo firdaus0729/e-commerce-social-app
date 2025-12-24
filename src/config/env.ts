@@ -8,8 +8,6 @@ if (isProd && !process.env.MONGO_URI) {
   throw new Error('MONGO_URI environment variable is required in production');
 }
 
-const clientUrlRaw = process.env.CLIENT_URL ?? 'http://localhost:8081';
-
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: Number(process.env.PORT ?? 4000),
@@ -17,9 +15,8 @@ export const env = {
   // NOTE: in production `MONGO_URI` is required (see check above). Do NOT commit production credentials.
   mongoUri: process.env.MONGO_URI ?? 'mongodb://127.0.0.1:27017/live-shop',
   jwtSecret: process.env.JWT_SECRET ?? 'devsecret',
-  // Allow comma-separated client URLs in CLIENT_URL (e.g. https://app.example.com,https://admin.example.com)
-  clientUrl: clientUrlRaw,
-  allowedOrigins: clientUrlRaw.split(',').map((s) => s.trim()).filter(Boolean),
+  // CORS allowed origins are handled inside app.ts with a small local-dev whitelist and
+  // an optional ALLOW_ALL_ORIGINS toggle for quick testing.
   paypalClientId: process.env.PAYPAL_CLIENT_ID ?? '',
   paypalClientSecret: process.env.PAYPAL_CLIENT_SECRET ?? '',
   paypalMode: process.env.PAYPAL_MODE ?? 'sandbox', // 'sandbox' or 'live'
