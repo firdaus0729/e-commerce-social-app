@@ -13,7 +13,8 @@ interface SocketUser {
 const connectedUsers = new Map<string, SocketUser>();
 
 export function setupWebSocket(httpServer: HTTPServer) {
-  const socketOrigins = (env.allowedOrigins && env.allowedOrigins.length) ? env.allowedOrigins : ['*'];
+  const allowAll = (process.env.ALLOW_ALL_ORIGINS || '').toLowerCase() === 'true';
+  const socketOrigins = allowAll ? ['*'] : ['http://localhost:19006', 'http://localhost:8081'];
 
   const io = new SocketIOServer(httpServer, {
     cors: {

@@ -112,8 +112,10 @@ export async function createPayPalOrder(
         brand_name: 'Live Shop',
         landing_page: 'NO_PREFERENCE',
         user_action: 'PAY_NOW',
-        return_url: `${env.clientUrl}/checkout/success`,
-        cancel_url: `${env.clientUrl}/checkout/cancel`,
+        // If CLIENT_URL is not provided, fall back to EXPO_PUBLIC_API_URL or API_URL.
+        // Native apps (APK/IPA) typically complete payments in-app; these URLs are used for web flows.
+        return_url: `${process.env.CLIENT_URL ?? process.env.EXPO_PUBLIC_API_URL ?? process.env.API_URL ?? 'https://e-commerce-social-app.onrender.com'}/checkout/success`,
+        cancel_url: `${process.env.CLIENT_URL ?? process.env.EXPO_PUBLIC_API_URL ?? process.env.API_URL ?? 'https://e-commerce-social-app.onrender.com'}/checkout/cancel`,
       },
     });
 
