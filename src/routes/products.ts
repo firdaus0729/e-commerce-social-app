@@ -5,7 +5,6 @@ import { Store } from '../models/Store';
 import { Engagement, Comment } from '../models/Engagement';
 import { Review } from '../models/Review';
 import { createNotification } from '../utils/notifications';
-import { createNotification } from '../utils/notifications';
 
 const router = Router();
 
