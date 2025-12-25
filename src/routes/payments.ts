@@ -14,6 +14,7 @@ import {
   sendPayPalPayout,
   sendAdminFee,
 } from '../services/payment';
+import { createNotification } from '../utils/notifications';
 
 const router = Router();
 
@@ -192,6 +193,30 @@ router.post('/checkout/confirm', auth, async (req: AuthRequest, res) => {
         await cart.save();
       }
 
+      // Create success notification for buyer
+      await createNotification({
+        user: req.user!._id,
+        from: req.user!._id,
+        type: 'payment_success',
+        payment: payment._id,
+        order: order._id,
+        message: `Payment of $${payment.amount} completed successfully`,
+      });
+
+      // Create success notification for seller
+      const store = await Store.findById(order.store);
+      if (store?.owner) {
+        await createNotification({
+          user: store.owner,
+          from: req.user!._id,
+          type: 'payment_success',
+          payment: payment._id,
+          order: order._id,
+          product: order.items[0]?.product,
+          message: `You received a payment of $${payment.sellerAmount} for your product`,
+        });
+      }
+
       return res.json({ success: true, order, payment });
     }
 
@@ -211,6 +236,30 @@ router.post('/checkout/confirm', auth, async (req: AuthRequest, res) => {
 
       order.status = 'paid';
       await order.save();
+
+      // Create success notification for buyer
+      await createNotification({
+        user: req.user!._id,
+        from: req.user!._id, // System notification
+        type: 'payment_success',
+        payment: payment._id,
+        order: order._id,
+        message: `Payment of $${payment.amount} completed successfully`,
+      });
+
+      // Create success notification for seller
+      const store = await Store.findById(order.store);
+      if (store?.owner) {
+        await createNotification({
+          user: store.owner,
+          from: req.user!._id,
+          type: 'payment_success',
+          payment: payment._id,
+          order: order._id,
+          product: order.items[0]?.product,
+          message: `You received a payment of $${payment.sellerAmount} for your product`,
+        });
+      }
 
       // Inventory was reserved when items were added to cart; no further decrement needed here
 

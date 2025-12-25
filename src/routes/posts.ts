@@ -6,6 +6,7 @@ import { PostComment } from '../models/PostComment';
 import { SavedPost } from '../models/SavedPost';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
+import { createNotification } from '../utils/notifications';
 
 const router = Router();
 
@@ -34,111 +35,233 @@ router.post('/', auth, async (req: AuthRequest, res) => {
 // Get posts by user
 router.get('/user/:userId', async (req, res) => {
   const { userId } = req.params;
-  const posts = await Post.find({ user: userId })
-    .populate('user', 'name profilePhoto')
-    .sort({ createdAt: -1 })
-    .lean();
+  const { page = 1, limit = 20 } = req.query;
+  const skip = (Number(page) - 1) * Number(limit);
+  const limitNum = Math.min(Number(limit), 50);
 
-  const postsWithStats = await Promise.all(
-    posts.map(async (post) => {
-      const commentsCount = await PostComment.countDocuments({ post: post._id });
-      return {
-        ...post,
-        likesCount: post.likes.length,
-        viewsCount: post.views.length,
-        commentsCount,
-      };
-    })
-  );
+  try {
+    // Use aggregation pipeline for better performance
+    const pipeline: any[] = [
+      { $match: { user: userId } },
+      {
+        $lookup: {
+          from: 'postcomments',
+          localField: '_id',
+          foreignField: 'post',
+          as: 'comments',
+        },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'user',
+          foreignField: '_id',
+          as: 'userData',
+          pipeline: [{ $project: { name: 1, profilePhoto: 1 } }],
+        },
+      },
+      {
+        $addFields: {
+          likesCount: { $size: '$likes' },
+          viewsCount: { $size: '$views' },
+          commentsCount: { $size: '$comments' },
+          user: { $arrayElemAt: ['$userData', 0] },
+        },
+      },
+      {
+        $project: {
+          comments: 0,
+          userData: 0,
+        },
+      },
+      { $sort: { createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limitNum },
+    ];
 
-  res.json(postsWithStats);
+    const posts = await Post.aggregate(pipeline);
+    res.json(posts);
+  } catch (error: any) {
+    console.error('User posts error:', error);
+    res.status(500).json({ message: error.message || 'Failed to fetch posts' });
+  }
 });
 
 // Get current user's posts
 router.get('/me', auth, async (req: AuthRequest, res) => {
-  const posts = await Post.find({ user: req.user!._id })
-    .populate('user', 'name profilePhoto')
-    .sort({ createdAt: -1 })
-    .lean();
+  const { page = 1, limit = 20 } = req.query;
+  const skip = (Number(page) - 1) * Number(limit);
+  const limitNum = Math.min(Number(limit), 50);
 
-  const postsWithStats = await Promise.all(
-    posts.map(async (post) => {
-      const commentsCount = await PostComment.countDocuments({ post: post._id });
-      return {
-        ...post,
-        likesCount: post.likes.length,
-        viewsCount: post.views.length,
-        commentsCount,
-      };
-    })
-  );
+  try {
+    // Use aggregation pipeline for better performance
+    const pipeline: any[] = [
+      { $match: { user: req.user!._id } },
+      {
+        $lookup: {
+          from: 'postcomments',
+          localField: '_id',
+          foreignField: 'post',
+          as: 'comments',
+        },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'user',
+          foreignField: '_id',
+          as: 'userData',
+          pipeline: [{ $project: { name: 1, profilePhoto: 1 } }],
+        },
+      },
+      {
+        $addFields: {
+          likesCount: { $size: '$likes' },
+          viewsCount: { $size: '$views' },
+          commentsCount: { $size: '$comments' },
+          user: { $arrayElemAt: ['$userData', 0] },
+        },
+      },
+      {
+        $project: {
+          comments: 0,
+          userData: 0,
+        },
+      },
+      { $sort: { createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limitNum },
+    ];
 
-  res.json(postsWithStats);
+    const posts = await Post.aggregate(pipeline);
+    res.json(posts);
+  } catch (error: any) {
+    console.error('My posts error:', error);
+    res.status(500).json({ message: error.message || 'Failed to fetch posts' });
+  }
 });
 
 // Get feed posts (show all posts, prioritize users who viewed my posts most)
 router.get('/feed', async (req, res) => {
-  // Get all posts from all users
-  let posts = await Post.find({})
-    .populate('user', 'name profilePhoto')
-    .sort({ createdAt: -1 })
-    .limit(100)
-    .lean();
+  const { page = 1, limit = 20 } = req.query;
+  const skip = (Number(page) - 1) * Number(limit);
+  const limitNum = Math.min(Number(limit), 50); // Cap at 50
 
-  // If user is authenticated, prioritize users who viewed their posts
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    try {
-      const token = authHeader.substring(7);
-      const decoded = jwt.verify(token, env.jwtSecret) as { sub: string };
-      const currentUserId = decoded.sub;
+  try {
+    // Use aggregation pipeline for better performance - get posts with comment counts in one query
+    let pipeline: any[] = [
+      {
+        $lookup: {
+          from: 'postcomments',
+          localField: '_id',
+          foreignField: 'post',
+          as: 'comments',
+        },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'user',
+          foreignField: '_id',
+          as: 'userData',
+          pipeline: [{ $project: { name: 1, profilePhoto: 1 } }],
+        },
+      },
+      {
+        $addFields: {
+          likesCount: { $size: '$likes' },
+          viewsCount: { $size: '$views' },
+          commentsCount: { $size: '$comments' },
+          user: { $arrayElemAt: ['$userData', 0] },
+        },
+      },
+      {
+        $project: {
+          comments: 0,
+          userData: 0,
+        },
+      },
+    ];
 
-      // Calculate view scores: prioritize users who viewed my posts most
-      const myPosts = await Post.find({ user: currentUserId }).lean();
-      const userViewScores: Record<string, number> = {};
+    // If user is authenticated, prioritize users who viewed their posts most
+    const authHeader = req.headers.authorization;
+    let userViewScores: Record<string, number> = {};
+    
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const token = authHeader.substring(7);
+        const decoded = jwt.verify(token, env.jwtSecret) as { sub: string };
+        const currentUserId = decoded.sub;
 
-      myPosts.forEach((myPost) => {
-        myPost.views.forEach((viewerId: any) => {
-          const viewerStr = viewerId.toString();
-          if (viewerStr !== currentUserId) {
-            userViewScores[viewerStr] = (userViewScores[viewerStr] || 0) + 1;
-          }
+        // Optimize: Only get view counts, not all posts
+        const myPosts = await Post.find({ user: currentUserId })
+          .select('views')
+          .lean();
+
+        myPosts.forEach((myPost) => {
+          myPost.views.forEach((viewerId: any) => {
+            const viewerStr = viewerId.toString();
+            if (viewerStr !== currentUserId) {
+              userViewScores[viewerStr] = (userViewScores[viewerStr] || 0) + 1;
+            }
+          });
         });
-      });
 
-      // Sort posts: prioritize posts from users with higher view scores
-      posts.sort((a, b) => {
-        const aUserId = (a.user as any)._id?.toString() || (a.user as any).toString();
-        const bUserId = (b.user as any)._id?.toString() || (b.user as any).toString();
-        const aScore = userViewScores[aUserId] || 0;
-        const bScore = userViewScores[bUserId] || 0;
-
-        if (aScore !== bScore) {
-          return bScore - aScore; // Higher score first
+        // Add sorting stage if we have view scores
+        if (Object.keys(userViewScores).length > 0) {
+          // Sort in memory after aggregation (simpler and works reliably)
+          // Get more posts than needed for sorting, then paginate
+          pipeline.push({
+            $sort: { createdAt: -1 },
+          });
+          
+          // Get more posts for sorting (up to 200 for better sorting)
+          const allPosts = await Post.aggregate(pipeline);
+          
+          // Sort by view score
+          allPosts.sort((a, b) => {
+            const aUserId = a.user?._id?.toString() || '';
+            const bUserId = b.user?._id?.toString() || '';
+            const aScore = userViewScores[aUserId] || 0;
+            const bScore = userViewScores[bUserId] || 0;
+            
+            if (aScore !== bScore) {
+              return bScore - aScore;
+            }
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          });
+          
+          // Apply pagination
+          const paginatedPosts = allPosts.slice(skip, skip + limitNum);
+          return res.json(paginatedPosts);
+        } else {
+          pipeline.push({
+            $sort: { createdAt: -1 },
+          });
         }
-        // If scores are equal, sort by creation date (newest first)
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      } catch (err) {
+        // If token is invalid, just show all posts in chronological order
+        pipeline.push({
+          $sort: { createdAt: -1 },
+        });
+      }
+    } else {
+      pipeline.push({
+        $sort: { createdAt: -1 },
       });
-    } catch (err) {
-      // If token is invalid, just show all posts in chronological order
-      console.log('Invalid token, showing all posts');
     }
+
+    // Add pagination
+    pipeline.push({ $skip: skip });
+    pipeline.push({ $limit: limitNum });
+
+    const posts = await Post.aggregate(pipeline);
+
+    res.json(posts);
+  } catch (error: any) {
+    console.error('Feed error:', error);
+    res.status(500).json({ message: error.message || 'Failed to fetch feed' });
   }
-
-  // Get comment counts for all posts
-  const postsWithStats = await Promise.all(
-    posts.map(async (post) => {
-      const commentsCount = await PostComment.countDocuments({ post: post._id });
-      return {
-        ...post,
-        likesCount: post.likes.length,
-        viewsCount: post.views.length,
-        commentsCount,
-      };
-    })
-  );
-
-  res.json(postsWithStats);
 });
 
 // View a post (add user to views)
@@ -163,14 +286,24 @@ router.post('/:id/like', auth, async (req: AuthRequest, res) => {
   const userId = req.user!._id.toString();
   const likeIndex = post.likes.findIndex((id: any) => id.toString() === userId);
 
-  if (likeIndex >= 0) {
+  const wasLiked = likeIndex >= 0;
+  
+  if (wasLiked) {
     post.likes.splice(likeIndex, 1);
   } else {
     post.likes.push(req.user!._id);
+    // Create notification for post owner
+    const postOwnerId = (post.user as any).toString();
+    await createNotification({
+      user: postOwnerId,
+      from: req.user!._id,
+      type: 'like',
+      post: post._id,
+    });
   }
 
   await post.save();
-  res.json({ liked: likeIndex < 0, likesCount: post.likes.length });
+  res.json({ liked: !wasLiked, likesCount: post.likes.length });
 });
 
 // Save a post (idempotent - saving the same post twice keeps it saved)
@@ -270,6 +403,16 @@ router.post('/:id/comments', auth, async (req: AuthRequest, res) => {
   const populatedComment = await PostComment.findById(comment._id)
     .populate('user', 'name profilePhoto')
     .lean();
+
+  // Create notification for post owner
+  const postOwnerId = (post.user as any).toString();
+  await createNotification({
+    user: postOwnerId,
+    from: req.user!._id,
+    type: 'comment',
+    post: post._id,
+    comment: comment._id,
+  });
 
   res.status(201).json(populatedComment);
 });

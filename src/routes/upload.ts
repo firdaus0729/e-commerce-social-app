@@ -111,7 +111,7 @@ router.post('/image', auth, imageUpload.single('image'), async (req: AuthRequest
     // Fallback: file on disk (either because cloud not configured or using disk storage)
     const file = req.file as Express.Multer.File;
     if (!file) return res.status(400).json({ message: 'No file uploaded' });
-    const fileUrl = `${process.env.API_URL || 'https://e-commerce-social-app.onrender.com'}/uploads/${file.filename}`;
+    const fileUrl = `${process.env.API_URL || 'http://192.168.145.108:4000'}/uploads/${file.filename}`;
     const saved = await Upload.create({ url: fileUrl, filename: file.filename, size: file.size, mimeType: file.mimetype, uploader: req.user?._id });
     return res.json({ url: saved.url, filename: saved.filename, size: saved.size, id: saved._id });
   } catch (err: any) {
@@ -148,7 +148,7 @@ router.post('/images', auth, imageUpload.array('images', 10), async (req: AuthRe
         }
       }
     } else {
-      const baseUrl = process.env.API_URL || 'https://e-commerce-social-app.onrender.com';
+      const baseUrl = process.env.API_URL || 'http://192.168.145.108:4000';
       for (const file of files) {
         const url = `${baseUrl}/uploads/${file.filename}`;
         const saved = await Upload.create({ url, filename: file.filename, size: file.size, mimeType: file.mimetype, uploader: req.user?._id });
@@ -184,7 +184,7 @@ router.post('/video', auth, videoUpload.single('video'), async (req: AuthRequest
       const saved = await Upload.create({ url: uploaded.secure_url, filename: req.file.filename, size: req.file.size, mimeType: req.file.mimetype, publicId: uploaded.public_id, uploader: req.user?._id });
       return res.json({ url: saved.url, filename: saved.filename, size: saved.size, id: saved._id });
     }
-    const fileUrl = `${process.env.API_URL || 'https://e-commerce-social-app.onrender.com'}/uploads/${req.file.filename}`;
+    const fileUrl = `${process.env.API_URL || 'http://192.168.145.108:4000'}/uploads/${req.file.filename}`;
     const saved = await Upload.create({ url: fileUrl, filename: req.file.filename, size: req.file.size, mimeType: req.file.mimetype, uploader: req.user?._id });
     return res.json({ url: saved.url, filename: saved.filename, size: saved.size, id: saved._id });
   } catch (err: any) {
@@ -215,7 +215,7 @@ router.post('/audio', auth, audioUpload.single('audio'), async (req: AuthRequest
       const saved = await Upload.create({ url: uploaded.secure_url, filename: req.file.filename, size: req.file.size, mimeType: req.file.mimetype, publicId: uploaded.public_id, uploader: req.user?._id });
       return res.json({ url: saved.url, filename: saved.filename, size: saved.size, id: saved._id });
     }
-    const fileUrl = `${process.env.API_URL || 'https://e-commerce-social-app.onrender.com'}/uploads/${req.file.filename}`;
+    const fileUrl = `${process.env.API_URL || 'http://192.168.145.108:4000'}/uploads/${req.file.filename}`;
     const saved = await Upload.create({ url: fileUrl, filename: req.file.filename, size: req.file.size, mimeType: req.file.mimetype, uploader: req.user?._id });
     return res.json({ url: saved.url, filename: saved.filename, size: saved.size, id: saved._id });
   } catch (err: any) {
@@ -246,7 +246,7 @@ router.post('/file', auth, fileUpload.single('file'), async (req: AuthRequest, r
       const saved = await Upload.create({ url: uploaded.secure_url, filename: req.file.originalname, size: req.file.size, mimeType: req.file.mimetype, publicId: uploaded.public_id, uploader: req.user?._id });
       return res.json({ url: saved.url, filename: saved.filename, size: saved.size, id: saved._id });
     }
-    const fileUrl = `${process.env.API_URL || 'https://e-commerce-social-app.onrender.com'}/uploads/${req.file.filename}`;
+    const fileUrl = `${process.env.API_URL || 'http://192.168.145.108:4000'}/uploads/${req.file.filename}`;
     const saved = await Upload.create({ url: fileUrl, filename: req.file.originalname, size: req.file.size, mimeType: req.file.mimetype, uploader: req.user?._id });
     return res.json({ url: saved.url, filename: saved.filename, size: saved.size, id: saved._id });
   } catch (err: any) {

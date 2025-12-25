@@ -34,13 +34,26 @@ router.post('/', auth, async (req: AuthRequest, res) => {
 });
 
 router.get('/', async (req, res) => {
-  const stores = await Store.find({ isActive: true }).sort({ createdAt: -1 }).limit(50);
-  res.json(
-    stores.map((store) => ({
-      ...store.toObject(),
-      owner: store.owner.toString(),
-    }))
-  );
+  const { page = 1, limit = 50 } = req.query;
+  const skip = (Number(page) - 1) * Number(limit);
+  const limitNum = Math.min(Number(limit), 100);
+  
+  try {
+    const stores = await Store.find({ isActive: true })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum)
+      .lean();
+    
+    res.json(
+      stores.map((store) => ({
+        ...store,
+        owner: store.owner.toString(),
+      }))
+    );
+  } catch (error: any) {
+    res.status(500).json({ message: error.message || 'Failed to fetch stores' });
+  }
 });
 
 // Get store by ID (must be before /:slug route)

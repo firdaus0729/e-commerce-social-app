@@ -4,6 +4,8 @@ import { Product } from '../models/Product';
 import { Store } from '../models/Store';
 import { Engagement, Comment } from '../models/Engagement';
 import { Review } from '../models/Review';
+import { createNotification } from '../utils/notifications';
+import { createNotification } from '../utils/notifications';
 
 const router = Router();
 
@@ -27,38 +29,101 @@ router.post('/', auth, async (req: AuthRequest, res) => {
 });
 
 router.get('/', async (req, res) => {
-  const { store, q } = req.query;
-  const query: Record<string, unknown> = { isPublished: true };
-  if (store) query.store = store;
-  if (q) query.title = { $regex: q as string, $options: 'i' };
-  const products = await Product.find(query).sort({ createdAt: -1 }).limit(50);
+  const { store, q, page = 1, limit = 50 } = req.query;
+  const skip = (Number(page) - 1) * Number(limit);
+  const limitNum = Math.min(Number(limit), 100);
   
-  // Get engagement stats and ratings for all products
-  const productsWithStats = await Promise.all(
-    products.map(async (product) => {
-      const likes = await Engagement.countDocuments({ product: product._id, type: 'like' });
-      const dislikes = await Engagement.countDocuments({ product: product._id, type: 'dislike' });
-      const commentsCount = await Comment.countDocuments({ product: product._id });
-      const reviews = await Review.find({ product: product._id });
-      const reviewCount = reviews.length;
-      const averageRating = reviewCount > 0
-        ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviewCount
-        : 0;
-      
-      const productObj = product.toObject();
-      return {
-        ...productObj,
-        likes,
-        dislikes,
-        commentsCount,
-        visits: product.visits || 0,
-        averageRating: Math.round(averageRating * 10) / 10,
-        reviewCount,
-      };
-    })
-  );
+  // Build match query
+  const matchQuery: Record<string, any> = { isPublished: true };
+  if (store) matchQuery.store = store;
+  if (q) matchQuery.title = { $regex: q as string, $options: 'i' };
   
-  res.json(productsWithStats);
+  try {
+    // Use aggregation pipeline for better performance
+    const pipeline: any[] = [
+      { $match: matchQuery },
+      {
+        $lookup: {
+          from: 'engagements',
+          let: { productId: '$_id' },
+          pipeline: [
+            { $match: { $expr: { $and: [{ $eq: ['$product', '$$productId'] }, { $eq: ['$type', 'like'] }] } } },
+            { $count: 'count' },
+          ],
+          as: 'likesData',
+        },
+      },
+      {
+        $lookup: {
+          from: 'engagements',
+          let: { productId: '$_id' },
+          pipeline: [
+            { $match: { $expr: { $and: [{ $eq: ['$product', '$$productId'] }, { $eq: ['$type', 'dislike'] }] } } },
+            { $count: 'count' },
+          ],
+          as: 'dislikesData',
+        },
+      },
+      {
+        $lookup: {
+          from: 'comments',
+          localField: '_id',
+          foreignField: 'product',
+          as: 'commentsData',
+        },
+      },
+      {
+        $lookup: {
+          from: 'reviews',
+          localField: '_id',
+          foreignField: 'product',
+          as: 'reviewsData',
+        },
+      },
+      {
+        $addFields: {
+          likes: { $ifNull: [{ $arrayElemAt: ['$likesData.count', 0] }, 0] },
+          dislikes: { $ifNull: [{ $arrayElemAt: ['$dislikesData.count', 0] }, 0] },
+          commentsCount: { $size: '$commentsData' },
+          reviewCount: { $size: '$reviewsData' },
+          averageRating: {
+            $cond: {
+              if: { $gt: [{ $size: '$reviewsData' }, 0] },
+              then: {
+                $round: [
+                  {
+                    $divide: [
+                      { $sum: '$reviewsData.rating' },
+                      { $size: '$reviewsData' },
+                    ],
+                  },
+                  1,
+                ],
+              },
+              else: 0,
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          likesData: 0,
+          dislikesData: 0,
+          commentsData: 0,
+          reviewsData: 0,
+        },
+      },
+      { $sort: { createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limitNum },
+    ];
+    
+    const products = await Product.aggregate(pipeline);
+    res.json(products);
+  } catch (error: any) {
+    console.error('Products error:', error);
+    res.status(500).json({ message: error.message || 'Failed to fetch products' });
+  }
 });
 
 router.get('/:id', async (req, res) => {
@@ -192,8 +257,15 @@ router.post('/:id/reviews', auth, async (req: AuthRequest, res) => {
     return res.status(400).json({ message: 'Rating must be between 1 and 5' });
   }
   
-  const product = await Product.findById(req.params.id);
+  const product = await Product.findById(req.params.id).populate('store');
   if (!product) return res.status(404).json({ message: 'Product not found' });
+  
+  // Check if this is a new review or update
+  const existingReview = await Review.findOne({
+    product: product._id,
+    user: req.user!._id,
+  });
+  const isNewReview = !existingReview;
   
   // Update or create review
   const review = await Review.findOneAndUpdate(
@@ -210,6 +282,21 @@ router.post('/:id/reviews', auth, async (req: AuthRequest, res) => {
     averageRating: Math.round(averageRating * 10) / 10,
     reviewCount: reviews.length,
   });
+  
+  // Create notification for product owner (store owner) only for new reviews
+  if (isNewReview) {
+    const store = product.store as any;
+    if (store?.owner) {
+      await createNotification({
+        user: store.owner,
+        from: req.user!._id,
+        type: 'review',
+        product: product._id,
+        review: review._id,
+        message: `${req.user!.name} reviewed your product "${product.title}"`,
+      });
+    }
+  }
   
   res.status(201).json({
     ...review.toObject(),

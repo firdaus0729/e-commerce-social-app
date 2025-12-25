@@ -22,7 +22,7 @@ const messageSchema = new Schema<IMessage>(
   {
     sender: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     receiver: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    post: { type: Schema.Types.ObjectId, ref: 'Post', required: true, index: true },
+    post: { type: Schema.Types.ObjectId, ref: 'Post', required: false, index: true },
     type: { type: String, enum: ['text', 'image', 'video', 'audio', 'file', 'gif'], default: 'text', required: true },
     text: { type: String },
     mediaUrl: { type: String },
@@ -39,6 +39,9 @@ const messageSchema = new Schema<IMessage>(
 messageSchema.index({ sender: 1, receiver: 1, post: 1, createdAt: -1 });
 messageSchema.index({ receiver: 1, sender: 1, post: 1, createdAt: -1 });
 messageSchema.index({ post: 1, createdAt: -1 });
+// Index for direct messages (without post)
+messageSchema.index({ sender: 1, receiver: 1, createdAt: -1 });
+messageSchema.index({ receiver: 1, sender: 1, createdAt: -1 });
 
 export const Message: Model<IMessage> =
   mongoose.models.Message ?? mongoose.model<IMessage>('Message', messageSchema);

@@ -17,6 +17,8 @@ import postRoutes from './routes/posts';
 import userRoutes from './routes/users';
 import messageRoutes from './routes/messages';
 import adminRoutes from './routes/admin';
+import storyRoutes from './routes/stories';
+import notificationRoutes from './routes/notifications';
 import { errorHandler } from './middleware/error';
 
 export const createApp = () => {
@@ -79,6 +81,8 @@ export const createApp = () => {
   app.use('/users', userRoutes);
   app.use('/messages', messageRoutes);
   app.use('/admin', adminRoutes);
+  app.use('/stories', storyRoutes);
+  app.use('/notifications', notificationRoutes);
   app.use('/uploads', express.static('uploads'));
 
   app.use(errorHandler);
