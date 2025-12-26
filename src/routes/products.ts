@@ -5,6 +5,7 @@ import { Store } from '../models/Store';
 import { Engagement, Comment } from '../models/Engagement';
 import { Review } from '../models/Review';
 import { createNotification } from '../utils/notifications';
+import mongoose from 'mongoose';
 
 const router = Router();
 
@@ -34,7 +35,15 @@ router.get('/', async (req, res) => {
   
   // Build match query
   const matchQuery: Record<string, any> = { isPublished: true };
-  if (store) matchQuery.store = store;
+  if (store) {
+    // Convert string store ID to ObjectId for proper matching
+    try {
+      matchQuery.store = new mongoose.Types.ObjectId(store as string);
+    } catch (err) {
+      // If invalid ObjectId format, skip the store filter
+      console.error('Invalid store ID format:', store);
+    }
+  }
   if (q) matchQuery.title = { $regex: q as string, $options: 'i' };
   
   try {
