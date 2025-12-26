@@ -141,6 +141,12 @@ router.post('/:userId/follow', auth, async (req: AuthRequest, res) => {
     targetUser.followers = targetUser.followers.filter(
       (id: any) => id.toString() !== currentUserId
     );
+    // Create notification for unfollowed user
+    await createNotification({
+      user: targetUser._id,
+      from: currentUser._id,
+      type: 'unfollow',
+    });
   } else {
     // Follow
     currentUser.following.push(targetUser._id);

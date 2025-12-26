@@ -5,6 +5,7 @@ import { StoryReply } from '../models/StoryReply';
 import { User } from '../models/User';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
+import { createNotification } from '../utils/notifications';
 
 const router = Router();
 
@@ -275,6 +276,14 @@ router.post('/:id/like', auth, async (req: AuthRequest, res) => {
     story.likes.splice(likeIndex, 1);
   } else {
     story.likes.push(req.user!._id);
+    // Create notification for story owner
+    const storyOwnerId = (story.user as any).toString();
+    await createNotification({
+      user: storyOwnerId,
+      from: req.user!._id,
+      type: 'story_like',
+      story: story._id,
+    });
   }
 
   await story.save();
@@ -308,6 +317,16 @@ router.post('/:id/reply', auth, async (req: AuthRequest, res) => {
   const populatedReply = await StoryReply.findById(reply._id)
     .populate('user', 'name profilePhoto')
     .lean();
+
+  // Create notification for story owner
+  const storyOwnerId = (story.user as any).toString();
+  await createNotification({
+    user: storyOwnerId,
+    from: req.user!._id,
+    type: 'story_reply',
+    story: story._id,
+    message: `Replied to your story: ${text.trim().substring(0, 50)}${text.trim().length > 50 ? '...' : ''}`,
+  });
 
   res.status(201).json(populatedReply);
 });

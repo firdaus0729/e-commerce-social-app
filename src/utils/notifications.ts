@@ -4,7 +4,7 @@ import mongoose from 'mongoose';
 export async function createNotification(data: {
   user: mongoose.Types.ObjectId | string;
   from: mongoose.Types.ObjectId | string;
-  type: 'like' | 'comment' | 'follow' | 'payment_success' | 'payment_failed' | 'review' | 'message' | 'post_mention' | 'story_reply';
+  type: 'like' | 'comment' | 'follow' | 'unfollow' | 'payment_success' | 'payment_failed' | 'review' | 'message' | 'post_mention' | 'story_reply' | 'story_like' | 'product_like' | 'product_dislike' | 'order_placed';
   post?: mongoose.Types.ObjectId | string;
   comment?: mongoose.Types.ObjectId | string;
   review?: mongoose.Types.ObjectId | string;
@@ -15,8 +15,8 @@ export async function createNotification(data: {
   message?: string;
   metadata?: Record<string, any>;
 }) {
-  // Don't create notification if user is notifying themselves
-  if (data.user.toString() === data.from.toString()) {
+  // Don't create notification if user is notifying themselves (except for system notifications like payment_success)
+  if (data.user.toString() === data.from.toString() && !['payment_success', 'payment_failed', 'order_placed'].includes(data.type)) {
     return null;
   }
 

@@ -59,6 +59,18 @@ router.post('/checkout/create-intent', auth, async (req: AuthRequest, res) => {
     });
     const { platformFee, sellerAmount } = calculatePlatformFee(total);
     const storeDoc = await Store.findById(store);
+    
+    // Create notification for store owner about new order
+    if (storeDoc?.owner) {
+      await createNotification({
+        user: storeDoc.owner,
+        from: req.user!._id,
+        type: 'order_placed',
+        order: order._id,
+        product: items[0]?.product,
+        message: `New order placed: ${items.length} item(s) - ${cart.currency || 'USD'} ${total.toFixed(2)}`,
+      });
+    }
 
     // Handle PayPal provider
     if (provider === 'paypal') {

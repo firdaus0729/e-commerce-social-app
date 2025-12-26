@@ -4,12 +4,17 @@ export type NotificationType =
   | 'like' 
   | 'comment' 
   | 'follow' 
+  | 'unfollow'
   | 'payment_success' 
   | 'payment_failed' 
   | 'review' 
   | 'message'
   | 'post_mention'
-  | 'story_reply';
+  | 'story_reply'
+  | 'story_like'
+  | 'product_like'
+  | 'product_dislike'
+  | 'order_placed';
 
 export interface INotification extends Document {
   user: mongoose.Types.ObjectId; // User who receives the notification
@@ -37,7 +42,7 @@ const notificationSchema = new Schema<INotification>(
     from: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     type: { 
       type: String, 
-      enum: ['like', 'comment', 'follow', 'payment_success', 'payment_failed', 'review', 'message', 'post_mention', 'story_reply'], 
+      enum: ['like', 'comment', 'follow', 'unfollow', 'payment_success', 'payment_failed', 'review', 'message', 'post_mention', 'story_reply', 'story_like', 'product_like', 'product_dislike', 'order_placed'], 
       required: true,
       index: true
     },

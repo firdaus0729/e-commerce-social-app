@@ -181,8 +181,16 @@ router.delete('/:id', auth, async (req: AuthRequest, res) => {
 
 // Like/Dislike product
 router.post('/:id/like', auth, async (req: AuthRequest, res) => {
-  const product = await Product.findById(req.params.id);
+  const product = await Product.findById(req.params.id).populate('store');
   if (!product) return res.status(404).json({ message: 'Product not found' });
+  
+  // Check if already liked (to avoid duplicate notifications)
+  const existingEngagement = await Engagement.findOne({ 
+    product: product._id, 
+    user: req.user!._id, 
+    type: 'like' 
+  });
+  const isNewLike = !existingEngagement;
   
   await Engagement.findOneAndUpdate(
     { product: product._id, user: req.user!._id },
@@ -193,6 +201,20 @@ router.post('/:id/like', auth, async (req: AuthRequest, res) => {
   // Remove dislike if exists
   await Engagement.deleteOne({ product: product._id, user: req.user!._id, type: 'dislike' });
   
+  // Create notification for product owner (store owner) only for new likes
+  if (isNewLike) {
+    const store = product.store as any;
+    if (store?.owner) {
+      await createNotification({
+        user: store.owner,
+        from: req.user!._id,
+        type: 'product_like',
+        product: product._id,
+        message: `${req.user!.name} liked your product "${product.title}"`,
+      });
+    }
+  }
+  
   const likes = await Engagement.countDocuments({ product: product._id, type: 'like' });
   const dislikes = await Engagement.countDocuments({ product: product._id, type: 'dislike' });
   
@@ -200,8 +222,16 @@ router.post('/:id/like', auth, async (req: AuthRequest, res) => {
 });
 
 router.post('/:id/dislike', auth, async (req: AuthRequest, res) => {
-  const product = await Product.findById(req.params.id);
+  const product = await Product.findById(req.params.id).populate('store');
   if (!product) return res.status(404).json({ message: 'Product not found' });
+  
+  // Check if already disliked (to avoid duplicate notifications)
+  const existingEngagement = await Engagement.findOne({ 
+    product: product._id, 
+    user: req.user!._id, 
+    type: 'dislike' 
+  });
+  const isNewDislike = !existingEngagement;
   
   await Engagement.findOneAndUpdate(
     { product: product._id, user: req.user!._id },
@@ -211,6 +241,20 @@ router.post('/:id/dislike', auth, async (req: AuthRequest, res) => {
   
   // Remove like if exists
   await Engagement.deleteOne({ product: product._id, user: req.user!._id, type: 'like' });
+  
+  // Create notification for product owner (store owner) only for new dislikes
+  if (isNewDislike) {
+    const store = product.store as any;
+    if (store?.owner) {
+      await createNotification({
+        user: store.owner,
+        from: req.user!._id,
+        type: 'product_dislike',
+        product: product._id,
+        message: `${req.user!.name} disliked your product "${product.title}"`,
+      });
+    }
+  }
   
   const likes = await Engagement.countDocuments({ product: product._id, type: 'like' });
   const dislikes = await Engagement.countDocuments({ product: product._id, type: 'dislike' });
